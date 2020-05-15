@@ -1,21 +1,32 @@
+import os
 import re
 import random
 import jieba
 import logging
 from xml.dom import minidom
+
+import torch
 from torchtext.data import Iterator, TabularDataset
 
 
+def save(model, save_dir, save_prefix, steps):
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+    save_prefix = os.path.join(save_dir, save_prefix)
+    save_path = '{}_{}.pt'.format(save_prefix, steps)
+    torch.save(model.state_dict(), save_path)
+
+
 def load_dataset(text, label, args, **kwargs):
-    train_dataset, test_dataset = get_dataset('data', text, label)
-    text.build_vocab(train_dataset, test_dataset)
-    label.build_vocab(train_dataset)
-    train_data, test_data = Iterator.splits(
-        (train_dataset, test_dataset),
-        batch_sizes=(args.batch_size, len(test_dataset)),
+    train_dataset, dev_dataset, test_dataset = get_dataset('../data', text, label)
+    text.build_vocab(train_dataset, dev_dataset, test_dataset)
+    label.build_vocab(train_dataset, dev_dataset)
+    train_data, dev_data, test_data = Iterator.splits(
+        (train_dataset, dev_dataset, test_dataset),
+        batch_sizes=(args.batch_size, len(dev_dataset), len(test_dataset)),
         sort_key=lambda x: len(x.text),
         **kwargs)
-    return train_data, test_data
+    return train_data, dev_data, test_data
 
 
 def word_cut(text):
@@ -44,7 +55,11 @@ def prepare_csv(path):
     train_file = 'train_file.tsv'
     f = open(path + '/' + train_file, 'w', encoding='utf-8')
     f.write('label\ttext\n')
-    for i in range(text.__len__()):
+    for i in range(9000):
+        f.write(str(text[i][1]) + '\t' + text[i][0] + '\n')
+    f = open(path + '/' + 'val_file.tsv', 'w', encoding='utf-8')
+    f.write('label\ttext\n')
+    for i in range(9000, 10000):
         f.write(str(text[i][1]) + '\t' + text[i][0] + '\n')
 
     test_file = 'test_file.tsv'
@@ -57,14 +72,14 @@ def prepare_csv(path):
 def get_dataset(path, text_field, label_field):
     prepare_csv(path)
     text_field.tokenize = word_cut
-    train = TabularDataset.splits(
+    train, dev = TabularDataset.splits(
         path=path, format='tsv', skip_header=True,
-        train='train_file.tsv',
+        train='train_file.tsv', validation='val_file.tsv',
         fields=[
             ('label', label_field),
             ('text', text_field)
         ]
-    )[0]
+    )
     test = TabularDataset.splits(
         path=path, format='tsv', skip_header=True,
         train='test_file.tsv',
@@ -72,4 +87,4 @@ def get_dataset(path, text_field, label_field):
             ('text', text_field)
         ]
     )[0]
-    return train, test
+    return train, dev, test

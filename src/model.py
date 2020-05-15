@@ -28,5 +28,5 @@ class TextCNN(nn.Module):
         x = [F.max_pool1d(item, item.size(2)).squeeze(2) for item in x]
         x = torch.cat(x, 1)
         x = self.dropout(x)
-        logits = self.fc(x)
-        return logits
+        res = self.fc(x)
+        return res

@@ -1,52 +1,41 @@
-import os
-import sys
 import torch
 import torch.nn.functional as F
+
+from utils import save
 
 
 def train(train_iter, dev_iter, model, args):
     if args.cuda:
         model.cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    steps = 0
     best_acc = 0
-    last_step = 0
     model.train()
     for epoch in range(1, args.epochs + 1):
+        steps = 0
+        print("\nStarting {:}epoch".format(epoch))
         for batch in train_iter:
             feature, target = batch.text, batch.label
             feature = feature.data.t()
-            # target = target.data.sub(1)
             if args.cuda:
                 feature, target = feature.cuda(), target.cuda()
             optimizer.zero_grad()
-            logits = model(feature)
-            loss = F.cross_entropy(logits, target)
+            res = model(feature)
+            loss = F.cross_entropy(res, target)
             loss.backward()
             optimizer.step()
             steps += 1
             if steps % args.log_interval == 0:
-                corrects = (torch.max(logits, 1)[1].view(target.size()).data == target.data).sum()
+                corrects = (torch.max(res, 1)[1].view(target.size()).data == target.data).sum()
                 train_acc = 100.0 * corrects / batch.batch_size
-                sys.stdout.write(
-                    '\rBatch[{}] - loss: {:.6f}  acc: {:.4f}%({}/{})'.format(steps,
-                                                                             loss.item(),
-                                                                             train_acc,
-                                                                             corrects,
-                                                                             batch.batch_size))
-            #if steps % args.test_interval == 0:
-            if False:
+                print("\r", 'Batch[{}] - loss: {:.6f}  acc: {:.4f}%)'.format(steps, loss.item(), train_acc), end='',
+                      flush=True)
+            if steps % args.test_interval == 0:
                 dev_acc = eval(dev_iter, model, args)
                 if dev_acc > best_acc:
                     best_acc = dev_acc
-                    last_step = steps
                     if args.save_best:
-                        print('Saving best model, acc: {:.4f}%\n'.format(best_acc))
-                        save(model, args.save_dir, 'best', steps)
-                else:
-                    if steps - last_step >= args.early_stopping:
-                        print('\nearly stop by {} steps, acc: {:.4f}%'.format(args.early_stopping, best_acc))
-                        raise KeyboardInterrupt
+                        print('Saving best model, acc: {:.4f}%'.format(best_acc))
+                        save(model, args.save_dir, 'best', '')
 
 
 def eval(data_iter, model, args):
@@ -54,27 +43,30 @@ def eval(data_iter, model, args):
     corrects, avg_loss = 0, 0
     for batch in data_iter:
         feature, target = batch.text, batch.label
-        feature.data.t_(), target.data.sub_(1)
+        feature = feature.data.t()
         if args.cuda:
             feature, target = feature.cuda(), target.cuda()
-        logits = model(feature)
-        loss = F.cross_entropy(logits, target)
+        res = model(feature)
+        loss = F.cross_entropy(res, target)
         avg_loss += loss.item()
-        corrects += (torch.max(logits, 1)
-                     [1].view(target.size()).data == target.data).sum()
+        corrects += (torch.max(res, 1)[1].view(target.size()).data == target.data).sum()
     size = len(data_iter.dataset)
     avg_loss /= size
     accuracy = 100.0 * corrects / size
-    print('\nEvaluation - loss: {:.6f}  acc: {:.4f}%({}/{}) \n'.format(avg_loss,
-                                                                       accuracy,
-                                                                       corrects,
-                                                                       size))
+    print('\nEvaluation - loss: {:.6f}  acc: {:.4f}%({}/{})'.format(avg_loss,
+                                                                    accuracy,
+                                                                    corrects,
+                                                                    size))
     return accuracy
 
 
-def save(model, save_dir, save_prefix, steps):
-    if not os.path.isdir(save_dir):
-        os.makedirs(save_dir)
-    save_prefix = os.path.join(save_dir, save_prefix)
-    save_path = '{}_steps_{}.pt'.format(save_prefix, steps)
-    torch.save(model.state_dict(), save_path)
+def ceshi(data_iter, model, args):
+    model.eval()
+    for batch in data_iter:
+        feature = batch.text
+        feature = feature.data.t()
+        if args.cuda:
+            feature = feature.cuda()
+        res = model(feature)
+        res = torch.max(res, 1)[1].data
+        return res
